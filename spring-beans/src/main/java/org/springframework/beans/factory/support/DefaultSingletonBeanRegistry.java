@@ -179,23 +179,52 @@ public class DefaultSingletonBeanRegistry extends SimpleAliasRegistry implements
 	@Nullable
 	protected Object getSingleton(String beanName, boolean allowEarlyReference) {
 		// Quick check for existing instance without full singleton lock
+		//到一级缓存中获取beanName对应的单实例对象。
 		Object singletonObject = this.singletonObjects.get(beanName);
+
+		//条件一成立（singletonObject == null）： 有几种可能呢？？
+		//1.单实例确实尚未创建呢..
+		//2.单实例正在创建中，当前发生循环依赖了...
+
+		//什么循环依赖？
+		//A->B   B->A , A->B  B->C  C->A
+		//单实例有几种循环依赖呢？
+		//1.构造方法循环依赖    （无解）
+		//2.setter造成的循环依赖  （有解，靠三级缓存解决。）
+
+		//三级缓存怎么解决的setter造成的循环依赖呢？
+		//举个例子：
+		//A->B,B->A   （setter依赖）
+		//1.假设Spring先实例化A，首先拿到A的构造方法，进行反射创建出来A的早期实例对象，这个时候，这个早期对象被包装成了ObjectFactory对象，放到了3级缓存。
+		//2.处理A的依赖数据，检查发现，A它依赖了B对象，所以接下来，Spring就会去根据B类型到容器中去getBean(B.class)，这里就递归了。
+		//3.拿到B的构造方法，进行反射创建出来B的早期实例对象，它也会把B包装成ObjectFactory对象，放到3级缓存。
+		//4.处理B的依赖数据，检查发现，B它依赖了A对象，所以接下来，Spring就会去根据A类型到容器中去getBean(A.class)，去拿A对象，这个又递归了。
+		//5.程序还会走到当前这个方法。getSingleton这个方法。
+		//6.条件一成立，条件二也会成立。
 		if (singletonObject == null && isSingletonCurrentlyInCreation(beanName)) {
-			singletonObject = this.earlySingletonObjects.get(beanName);
-			if (singletonObject == null && allowEarlyReference) {
-				synchronized (this.singletonObjects) {
-					// Consistent creation of early reference within full singleton lock
-					singletonObject = this.singletonObjects.get(beanName);
-					if (singletonObject == null) {
-						singletonObject = this.earlySingletonObjects.get(beanName);
-						if (singletonObject == null) {
-							ObjectFactory<?> singletonFactory = this.singletonFactories.get(beanName);
-							if (singletonFactory != null) {
-								singletonObject = singletonFactory.getObject();
-								this.earlySingletonObjects.put(beanName, singletonObject);
-								this.singletonFactories.remove(beanName);
-							}
-						}
+			synchronized (this.singletonObjects) {
+				//检查二级缓存
+				singletonObject = this.earlySingletonObjects.get(beanName);
+				//条件成立：说明二级没有，到三级缓存查看。
+				if (singletonObject == null && allowEarlyReference) {
+					//Spring为什么需要有3级缓存存在，而不是只有2级缓存呢？
+					//AOP，靠什么实现的呢？动态代理
+					//静态代理：需要手动写代码，实现一个新的java文件，这个java类 和 需要代理的对象 实现同一个接口，内部维护一个被代理对象（原生）
+					//代理类，在调用原生对象前后，可以加一些逻辑. 代理对象 和 被代理对象 是两个不同的对象，内存地址一定是不一样的。
+					//动态代理：不需要人为写代码了，而是依靠字节码框架动态生成class字节码文件，然后jvm再加载，然后也一样 也是去new代理对象，这个
+					//代理对象 没啥特殊的，也是内部保留了 原生对象，然后在调用原生对象前后 实现的 字节码增强。
+					//3级缓存在这里有什么目的呢？
+					//3级缓存里面保存的是对象工厂，这个对象工厂内部保留着最原生的对象引用，ObjectFactory的实现类，getObject()方法，它需要考虑一个问题。
+					//它到底要返回原生的，还是增强后的。
+					//getObject会判断当前这个早期实例 是否需要被增强，如果是，那么提前完成动态代理增强，返回代理对象。否则，返回原生对象。
+					ObjectFactory<?> singletonFactory = this.singletonFactories.get(beanName);
+					//条件成立：3级有数据。这里涉及到缓存升级。
+					if (singletonFactory != null) {
+						singletonObject = singletonFactory.getObject();
+						//向2级缓存存数据
+						this.earlySingletonObjects.put(beanName, singletonObject);
+						//将3级缓存的数据干掉。
+						this.singletonFactories.remove(beanName);
 					}
 				}
 			}
@@ -216,15 +245,30 @@ public class DefaultSingletonBeanRegistry extends SimpleAliasRegistry implements
 		synchronized (this.singletonObjects) {
 			Object singletonObject = this.singletonObjects.get(beanName);
 			if (singletonObject == null) {
+				//容器销毁时，会设置这个属性为true，这个时候就不能再创建bean实例了，直接抛错。
 				if (this.singletonsCurrentlyInDestruction) {
 					throw new BeanCreationNotAllowedException(beanName,
 							"Singleton bean creation not allowed while singletons of this factory are in destruction " +
-							"(Do not request a bean from a BeanFactory in a destroy method implementation!)");
+									"(Do not request a bean from a BeanFactory in a destroy method implementation!)");
 				}
+
 				if (logger.isDebugEnabled()) {
 					logger.debug("Creating shared instance of singleton bean '" + beanName + "'");
 				}
+
+				//将当前beanName放入到“正在创建中单实例集合”，放入成功，说明没有产生循环依赖，失败，则产生循环依赖，里面会抛异常。
+				//举个例子：构造方法参数依赖
+				//A->B    B->A
+				//1.加载A，根据A的构造方法，想要去实例化A对象，但是发现A的构造方法有一个参数是B（在这之前，已经向这个集合中添加了 {A}）
+				//2.因为A的构造方法依赖B，所以触发了加载B的逻辑..
+				//3.加载B，根据B的构造方法，想要去实例化B对象，但是发现B的构造方法有一个参数是A（在这之前，已经向这个集合中添加了 {A，B}）
+				//4.因为B的构造方法依赖A，所以再次触发了加载A的逻辑..
+				//5.再次来到这个getSingleton方法里，调用beforeSingletonCreation(A),因为创建中集合 已经有A了，所以添加失败，抛出异常
+				//完事。
 				beforeSingletonCreation(beanName);
+
+
+
 				boolean newSingleton = false;
 				boolean recordSuppressedExceptions = (this.suppressedExceptions == null);
 				if (recordSuppressedExceptions) {
@@ -441,18 +485,36 @@ public class DefaultSingletonBeanRegistry extends SimpleAliasRegistry implements
 		}
 	}
 
+	//<bean name="A" depends-on="B" ...>
+	//<bean name="B" depends-on="A" ...>
+
+	//以B为视角 dependentBeanMap {"B"：{"A"}}
+	//以A为视角 dependenciesForBeanMap {"A" :{"B"}}
+	//beanName:B，  dependentBeanName:A
 	private boolean isDependent(String beanName, String dependentBeanName, @Nullable Set<String> alreadySeen) {
 		if (alreadySeen != null && alreadySeen.contains(beanName)) {
 			return false;
 		}
 		String canonicalName = canonicalName(beanName);
+		//{"A"}
 		Set<String> dependentBeans = this.dependentBeanMap.get(canonicalName);
 		if (dependentBeans == null) {
 			return false;
 		}
+		//{"A"} 包含A，所以条件会成立，这里返回true，表示产生了循环依赖..
 		if (dependentBeans.contains(dependentBeanName)) {
 			return true;
 		}
+
+		//<bean name="A" dp="B">
+		//<bean name="B" dp="C">
+		//<bean name="C" dp="A">
+		//dependentBeanMap={B:{A}, C:{B}}
+		//isDependent(C,A)
+		//C#dependentBeans = {B}
+		//isDependent(B, A);
+		//B#dependentBeans = {A}
+		//就判断出来当前发生循环依赖问题了...返回true了。
 		for (String transitiveDependency : dependentBeans) {
 			if (alreadySeen == null) {
 				alreadySeen = new HashSet<>();

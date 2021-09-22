@@ -167,6 +167,7 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 	private final Map<String, RootBeanDefinition> mergedBeanDefinitions = new ConcurrentHashMap<>(256);
 
 	/** Names of beans that have already been created at least once. */
+	//已经创建bean实例的beanName集合。
 	private final Set<String> alreadyCreated = Collections.newSetFromMap(new ConcurrentHashMap<>(256));
 
 	/** Names of beans that are currently in creation. */
@@ -240,11 +241,23 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 			String name, @Nullable Class<T> requiredType, @Nullable Object[] args, boolean typeCheckOnly)
 			throws BeansException {
 
+		//参数传进来的name，可能是一个别名，也可能是一个&开头的name
+		//1.别名，重定向出来真实beanName
+		//2.&开头的name，说明，你要获取的bean实例对象，是一个FactoryBean对象。
+		//FactoryBean：如果某个bean的配置非常复杂，使用Spring管理不容易...不够灵活，想要使用编码的形式去构建它，那么你就可以提供
+		//一个构建该bean实例的工厂，这个工厂就是FactoryBean接口实现类。FactoryBean接口实现类还是需要使用Spring管理的。
+		//这里就涉及到两种对象，一种是FactoryBean接口实现类（IOC管理的），另一个就是FactoryBean接口内部管理的对象。
+		//如果要拿FactoryBean接口实现类，使用getBean时传的beanName需要带“&”开头。
+		//如果你要FactoryBean内部管理的对象，你直接传beanName不需要带“&”开头。
 		String beanName = transformedBeanName(name);
+		//保留返回值的..
 		Object bean;
 
 		// Eagerly check singleton cache for manually registered singletons.
+		//到缓存中获取共享单实例。第一个getSingleton(String beanName) 一个参数的..后面还有一个getSingleton 不要搞混了。
 		Object sharedInstance = getSingleton(beanName);
+
+		//CASE1：缓存中有对应的数据，此时缓存数据可能是普通单实例 也可能是 FactoryBean，所以需要根据name来进行判断，并且返回数据。
 		if (sharedInstance != null && args == null) {
 			if (logger.isTraceEnabled()) {
 				if (isSingletonCurrentlyInCreation(beanName)) {
@@ -255,12 +268,31 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 					logger.trace("Returning cached instance of singleton bean '" + beanName + "'");
 				}
 			}
+			//这里为什么又要套呢？为啥不直接拿回去用呢？
+			//其实，你从IOC中拿到的对象，它可能是普通单实例，也可能是FactoryBean实例。
+			//如果是FactoryBean实例，这个时候还要进行处理。主要是看name是带“&” 还是 不带“&”,
+			//带“&”说明这次getBean想要拿FactoryBean对象。
+			//否则是要拿FactoryBean内部管理的实例。
 			bean = getObjectForBeanInstance(sharedInstance, name, beanName, null);
 		}
 
+		//CASE2：缓存中没有我们的数据，我们应该自己创建了...
 		else {
 			// Fail if we're already creating this bean instance:
 			// We're assumably within a circular reference.
+			// Fail if we're already creating this bean instance:
+			// We're assumably within a circular reference.
+			//1、原型循环依赖问题判定
+			//举个例子：
+			//prototypeA -> B， B -> prototypeA
+			//1.会向正在创建中的原型集合内添加一个字符串 “A”
+			//2.创建prototypeA对象，只是一个早期对象。
+			//3.处理prototypeA的依赖，发现A依赖了B类型的对象
+			//4.触发了Spring.getBean(“B”)的操作。
+			//5.根据B的构造方法反射创建出来了B的早期实例
+			//6.Spring处理B对象的依赖，发现依赖了A。
+			//7.Spring转头回来再次去获取A去了。getBean(“A”).
+			//8.条件会返回true，最终抛出异常，算是结束了循环依赖注入。
 			if (isPrototypeCurrentlyInCreation(beanName)) {
 				throw new BeanCurrentlyInCreationException(beanName);
 			}
@@ -292,10 +324,24 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 			}
 
 			try {
+				//2.获取合并BD信息
+				//为什么需要合并呀？因为BD支持继承
 				RootBeanDefinition mbd = getMergedLocalBeanDefinition(beanName);
+				//判断当前BD是否为抽象BD，抽象BD不能创建实例，只能作为父BD让子BD去继承。
 				checkMergedBeanDefinition(mbd, beanName, args);
 
 				// Guarantee initialization of beans that the current bean depends on.
+				//3.depends-on属性处理..
+				//<bean name="A" depends-on="B" ... />
+				//<bean name="B" .../>
+				//循环依赖问题
+				//<bean name="A" depends-on="B" ... />
+				//<bean name="B" depends-on="A" .../>
+				//Spring是处理不了这种情况的，需要报错..
+				//Spring需要发现这种情况的产生。
+				//怎么发现呢? 依靠两个Map，一个map是 dependentBeanMap 另一个是 dependenciesForBeanMap
+				//1. dependentBeanMap 记录依赖当前beanName的其他beanName
+				//2. dependenciesForBeanMap 记录当前beanName依赖的其它beanName集合
 				String[] dependsOn = mbd.getDependsOn();
 				if (dependsOn != null) {
 					for (String dep : dependsOn) {
@@ -303,6 +349,10 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 							throw new BeanCreationException(mbd.getResourceDescription(), beanName,
 									"Circular depends-on relationship between '" + beanName + "' and '" + dep + "'");
 						}
+						//假设<bean name="A" depends-on="B" ... />
+						//dep:B，beanName:A
+						//以B为视角 dependentBeanMap {"B"：{"A"}}
+						//以A为视角 dependenciesForBeanMap {"A" :{"B"}}
 						registerDependentBean(dep, beanName);
 						try {
 							getBean(dep);
@@ -314,8 +364,10 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 					}
 				}
 
+				//CASE-SINGLETON：
 				// Create bean instance.
 				if (mbd.isSingleton()) {
+					//第二个getSingleton方法，这个方法更倾向于创建实例并返回。
 					sharedInstance = getSingleton(beanName, () -> {
 						try {
 							return createBean(beanName, mbd, args);
@@ -328,17 +380,27 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 							throw ex;
 						}
 					});
+					//这里为啥不直接返回，还调用getObjectForBeanInstance(...)?
+
+					//这里为什么又要套呢？为啥不直接拿回去用呢？
+					//其实，你从IOC中拿到的对象，它可能是普通单实例，也可能是FactoryBean实例。
+					//如果是FactoryBean实例，这个时候还要进行处理。主要是看name是带“&” 还是 不带“&”,
+					//带“&”说明这次getBean想要拿FactoryBean对象。
+					//否则是要拿FactoryBean内部管理的实例。
 					bean = getObjectForBeanInstance(sharedInstance, name, beanName, mbd);
 				}
-
+				//CASE-PROTOTYPE:
 				else if (mbd.isPrototype()) {
 					// It's a prototype -> create a new instance.
 					Object prototypeInstance = null;
 					try {
+						//记录当前线程相关的正在创建的原型对象beanName
 						beforePrototypeCreation(beanName);
+						//创建对象
 						prototypeInstance = createBean(beanName, mbd, args);
 					}
 					finally {
+						//从正在创建中的集合中 移除。
 						afterPrototypeCreation(beanName);
 					}
 					bean = getObjectForBeanInstance(prototypeInstance, name, beanName, mbd);
@@ -1136,6 +1198,11 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 	 * @return the transformed bean name
 	 */
 	protected String transformedBeanName(String name) {
+		//BeanFactoryUtils.transformedBeanName(name) 处理完&开头的字符的一个name。
+		//这个name是最终值么？不是，它还可能是别名。
+		//aliasMap保存别名信息。
+		//{"C":"B", "B":"A"} A有一个别名叫做“B”，但是别名“B” 它又被别名了，它有一个别名叫做“C”
+		//假设 get时 传的是C，那最终要得到什么? 要得到“A”.
 		return canonicalName(BeanFactoryUtils.transformedBeanName(name));
 	}
 
@@ -1256,7 +1323,11 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 			throws BeanDefinitionStoreException {
 
 		synchronized (this.mergedBeanDefinitions) {
+			//表示合并后的bd信息
 			RootBeanDefinition mbd = null;
+			//表示当前beanName对应的过期mbd信息
+			RootBeanDefinition previous = null;
+
 
 			// Check with full lock now in order to enforce the same merged instance.
 			if (containingBd == null) {
@@ -1264,6 +1335,8 @@ public abstract class AbstractBeanFactory extends FactoryBeanRegistrySupport imp
 			}
 
 			if (mbd == null) {
+				//CASE-未使用继承：
+				//条件成立：说明当前beanName对应BD没有使用继承，就不用处理继承了..
 				if (bd.getParentName() == null) {
 					// Use copy of given root bean definition.
 					if (bd instanceof RootBeanDefinition) {
