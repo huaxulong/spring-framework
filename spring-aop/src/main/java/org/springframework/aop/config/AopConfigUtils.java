@@ -96,7 +96,9 @@ public abstract class AopConfigUtils {
 	@Nullable
 	public static BeanDefinition registerAspectJAnnotationAutoProxyCreatorIfNecessary(
 			BeanDefinitionRegistry registry, @Nullable Object source) {
-
+		//参数一： 固定类型 AnnotationAwareAspectJAutoProxyCreator 很关键的class 砸门的aop功能 全靠这个class 了。
+		//参数二： spring 容器
+		//参数三： element
 		return registerOrEscalateApcAsRequired(AnnotationAwareAspectJAutoProxyCreator.class, registry, source);
 	}
 
