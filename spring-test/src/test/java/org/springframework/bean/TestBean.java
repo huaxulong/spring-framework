@@ -16,6 +16,8 @@ public class TestBean {
 		ClassPathXmlApplicationContext applicationContext = new ClassPathXmlApplicationContext("application.xml");
 		User user = (User)applicationContext.getBean("user");
 
+		user.queryUserInfo();
+
 		System.out.println("user : " + user.toString());
 	}
 

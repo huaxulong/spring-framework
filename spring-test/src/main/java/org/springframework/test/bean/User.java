@@ -34,6 +34,10 @@ public class User{
 		this.userName = userName;
 	}
 
+	public void queryUserInfo(){
+		System.out.println("查询用户信息");
+	}
+
 	@Override
 	public String toString() {
 		return "User{" +
