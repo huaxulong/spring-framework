@@ -43,6 +43,10 @@ import org.springframework.lang.Nullable;
 public interface BeanPostProcessor {
 
 	/**
+	 * 在前面和后面 用户修改新实例化 Bean 对象的扩展点
+	 */
+
+	/**
 	 * Apply this BeanPostProcessor to the given new bean instance <i>before</i> any bean
 	 * initialization callbacks (like InitializingBean's {@code afterPropertiesSet}
 	 * or a custom init-method). The bean will already be populated with property values.
@@ -55,6 +59,7 @@ public interface BeanPostProcessor {
 	 * @throws org.springframework.beans.BeansException in case of errors
 	 * @see org.springframework.beans.factory.InitializingBean#afterPropertiesSet
 	 */
+	// 实例化、依赖注入完毕， 在调用显示的初始化之前完成一些定制的初始化任务
 	@Nullable
 	default Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
 		return bean;
@@ -81,6 +86,7 @@ public interface BeanPostProcessor {
 	 * @see org.springframework.beans.factory.InitializingBean#afterPropertiesSet
 	 * @see org.springframework.beans.factory.FactoryBean
 	 */
+	// 实例化、依赖注入、初始化完毕时执行
 	@Nullable
 	default Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
 		return bean;

@@ -1,7 +1,7 @@
 package org.springframework.bean;
 
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.test.bean.User;
+import org.springframework.test.bean.UserDao;
 
 /**
  * @description: <p></p>
@@ -14,9 +14,9 @@ public class TestBean {
 
 	public static void main(String[] args) {
 		ClassPathXmlApplicationContext applicationContext = new ClassPathXmlApplicationContext("application.xml");
-		User user = (User)applicationContext.getBean("user");
+		UserDao user = (UserDao)applicationContext.getBean("user");
 
-		user.queryUserInfo();
+		user.queryUserName("10002");
 
 		System.out.println("user : " + user.toString());
 	}
