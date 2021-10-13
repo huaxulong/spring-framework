@@ -73,10 +73,13 @@ public abstract class AbstractAdvisorAutoProxyCreator extends AbstractAutoProxyC
 	protected Object[] getAdvicesAndAdvisorsForBean(
 			Class<?> beanClass, String beanName, @Nullable TargetSource targetSource) {
 
+		// 查询合适当前类型的 增强 通知
 		List<Advisor> advisors = findEligibleAdvisors(beanClass, beanName);
+
 		if (advisors.isEmpty()) {
 			return DO_NOT_PROXY;
 		}
+
 		return advisors.toArray();
 	}
 
@@ -91,12 +94,17 @@ public abstract class AbstractAdvisorAutoProxyCreator extends AbstractAutoProxyC
 	 * @see #extendAdvisors
 	 */
 	protected List<Advisor> findEligibleAdvisors(Class<?> beanClass, String beanName) {
+		// 获取到当前项目内所有的可以使用的 Advisor
 		List<Advisor> candidateAdvisors = findCandidateAdvisors();
+
+		// 将上一步获取到的全部 Advisor 做筛选， 筛选出出来适合自己当前类型的 Advisor
 		List<Advisor> eligibleAdvisors = findAdvisorsThatCanApply(candidateAdvisors, beanClass, beanName);
+		// 在这一步 会在 index 0 的位置上添加一个 ADVISOR， 细节回头再说
 		extendAdvisors(eligibleAdvisors);
 		if (!eligibleAdvisors.isEmpty()) {
 			eligibleAdvisors = sortAdvisors(eligibleAdvisors);
 		}
+		// 返回的都是匹配当前clazz 上下接口。
 		return eligibleAdvisors;
 	}
 
@@ -106,6 +114,7 @@ public abstract class AbstractAdvisorAutoProxyCreator extends AbstractAutoProxyC
 	 */
 	protected List<Advisor> findCandidateAdvisors() {
 		Assert.state(this.advisorRetrievalHelper != null, "No BeanFactoryAdvisorRetrievalHelper available");
+		// 这一步查询出来通过 bean 的方式提供 Advisor 的数据
 		return this.advisorRetrievalHelper.findAdvisorBeans();
 	}
 

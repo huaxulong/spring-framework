@@ -130,9 +130,14 @@ public abstract class AopProxyUtils {
 				specifiedInterfaces = advised.getProxiedInterfaces();
 			}
 		}
+		// 判断目标对象所有接口， 是否已经有 SpringProxy接口， 如果没有的话，需要添加这个接口， 这个接口就是表示这个代理类型 是为 Spring 造的
 		boolean addSpringProxy = !advised.isInterfaceProxied(SpringProxy.class);
+		// 判断目标对象所有接口 ， 是否已经有 Advised 接口， 手动添加这个接口
 		boolean addAdvised = !advised.isOpaque() && !advised.isInterfaceProxied(Advised.class);
+		// 判断目标对象所有接口， 是否已经有 DecoratingProxy 接口， 手动添加这个接口
 		boolean addDecoratingProxy = (decoratingProxy && !advised.isInterfaceProxied(DecoratingProxy.class));
+
+		// 表示非用户自己定义的接口
 		int nonUserIfcCount = 0;
 		if (addSpringProxy) {
 			nonUserIfcCount++;
@@ -143,7 +148,11 @@ public abstract class AopProxyUtils {
 		if (addDecoratingProxy) {
 			nonUserIfcCount++;
 		}
+
+		// 创建一个新的class数组， 长度是 原目标对象 提取出来的接口数量 + Spring 自己追加的接口数量
 		Class<?>[] proxiedInterfaces = new Class<?>[specifiedInterfaces.length + nonUserIfcCount];
+
+		// 原目标对象 提取出来的接口拷贝到 proxiedInterfaces
 		System.arraycopy(specifiedInterfaces, 0, proxiedInterfaces, 0, specifiedInterfaces.length);
 		int index = specifiedInterfaces.length;
 		if (addSpringProxy) {

@@ -83,12 +83,16 @@ public class BeanFactoryAspectJAdvisorsBuilder {
 	public List<Advisor> buildAspectJAdvisors() {
 		List<String> aspectNames = this.aspectBeanNames;
 
+		// 条件成立： 说明缓存内没有
 		if (aspectNames == null) {
 			synchronized (this) {
 				aspectNames = this.aspectBeanNames;
 				if (aspectNames == null) {
+					// 保持通过 @Aspect 注解定义的 Advisor 数据
 					List<Advisor> advisors = new ArrayList<>();
 					aspectNames = new ArrayList<>();
+
+					// 获取出来 Spring容器内全部的 beanName
 					String[] beanNames = BeanFactoryUtils.beanNamesForTypeIncludingAncestors(
 							this.beanFactory, Object.class, true, false);
 					for (String beanName : beanNames) {
@@ -97,14 +101,18 @@ public class BeanFactoryAspectJAdvisorsBuilder {
 						}
 						// We must be careful not to instantiate beans eagerly as in this case they
 						// would be cached by the Spring container but would not have been weaved.
+						// 当bean 标签是 parent类型时 class 可以是 null
 						Class<?> beanType = this.beanFactory.getType(beanName);
 						if (beanType == null) {
 							continue;
 						}
+						// 查询当前类型 或者 父类 是否有 @aspect 注解 ， 如果有 说明当前类型是  Aspect 类型
 						if (this.advisorFactory.isAspect(beanType)) {
 							aspectNames.add(beanName);
 							AspectMetadata amd = new AspectMetadata(beanType, beanName);
 							if (amd.getAjType().getPerClause().getKind() == PerClauseKind.SINGLETON) {
+
+								// 使用工厂模式管理 Aspect 元数据 关联的真实 @Aspect 注解的实例对象
 								MetadataAwareAspectInstanceFactory factory =
 										new BeanFactoryAspectInstanceFactory(this.beanFactory, beanName);
 								List<Advisor> classAdvisors = this.advisorFactory.getAdvisors(factory);

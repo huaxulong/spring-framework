@@ -53,17 +53,33 @@ public class DefaultAdvisorChainFactory implements AdvisorChainFactory, Serializ
 
 		// This is somewhat tricky... We have to process introductions first,
 		// but we need to preserve order in the ultimate list.
+		// AdvisorAdapterRegistry 接口有两个作用， 一个作用是可以向里面注册 AdvisorAdapter 适配器
+		// 适配器的目的： 1. 将非 Advisor 类型的增强， 包装成 Advisor
+		//             2. 将Advisor 类型的增强 提取出来对应 MethodInterceptor
 		AdvisorAdapterRegistry registry = GlobalAdvisorAdapterRegistry.getInstance();
+
+		// 获取出来 ProxyFactory 内部持有的增强信息
+		// 1. addAdvice() , 2. AddAdvisor() 最终在 ProxyFactory 内都会包装成 Advisor 的
 		Advisor[] advisors = config.getAdvisors();
+
+		// 拦截器列表
 		List<Object> interceptorList = new ArrayList<>(advisors.length);
+
+		// 真实的目标对象类型
 		Class<?> actualClass = (targetClass != null ? targetClass : method.getDeclaringClass());
 		Boolean hasIntroductions = null;
 
 		for (Advisor advisor : advisors) {
+			// 条件成立：  说明当前advisor 是包含切点信息的， 所以这个 if内部的逻辑， 就是匹配算法
 			if (advisor instanceof PointcutAdvisor) {
 				// Add it conditionally.
+				// 转换成可以获取到切点信息的接口
 				PointcutAdvisor pointcutAdvisor = (PointcutAdvisor) advisor;
+
+				// 条件二： 说明当前被代理对象的 class 匹配当前 Advisor 成功， 这一步 只是 class 匹配成功。
 				if (config.isPreFiltered() || pointcutAdvisor.getPointcut().getClassFilter().matches(actualClass)) {
+
+					// 获取切点信息的 方法匹配器
 					MethodMatcher mm = pointcutAdvisor.getPointcut().getMethodMatcher();
 					boolean match;
 					if (mm instanceof IntroductionAwareMethodMatcher) {
@@ -73,18 +89,24 @@ public class DefaultAdvisorChainFactory implements AdvisorChainFactory, Serializ
 						match = ((IntroductionAwareMethodMatcher) mm).matches(method, actualClass, hasIntroductions);
 					}
 					else {
+						// 如果目标方法匹配成功， 那么 match = true ， 静态匹配成功
 						match = mm.matches(method, actualClass);
 					}
+					// 静态匹配成功的话， 再检查是否需要运行时匹配
 					if (match) {
+						// 提取出来 advisor 内持有的拦截器信息
 						MethodInterceptor[] interceptors = registry.getInterceptors(advisor);
+						// 是否运行时匹配
 						if (mm.isRuntime()) {
 							// Creating a new object instance in the getInterceptors() method
 							// isn't a problem as we normally cache created chains.
 							for (MethodInterceptor interceptor : interceptors) {
+
 								interceptorList.add(new InterceptorAndDynamicMethodMatcher(interceptor, mm));
 							}
 						}
 						else {
+							// 将当前 advisor 内部的方法拦截器 追加到 interceptorList
 							interceptorList.addAll(Arrays.asList(interceptors));
 						}
 					}
@@ -102,7 +124,7 @@ public class DefaultAdvisorChainFactory implements AdvisorChainFactory, Serializ
 				interceptorList.addAll(Arrays.asList(interceptors));
 			}
 		}
-
+		// 返回所有的匹配当前 method 的方法拦截器
 		return interceptorList;
 	}
 

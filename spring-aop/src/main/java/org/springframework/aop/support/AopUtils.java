@@ -226,6 +226,7 @@ public abstract class AopUtils {
 			return false;
 		}
 
+		// 获取方法匹配器
 		MethodMatcher methodMatcher = pc.getMethodMatcher();
 		if (methodMatcher == MethodMatcher.TRUE) {
 			// No need to iterate the methods if we're matching any method anyway...
@@ -237,13 +238,18 @@ public abstract class AopUtils {
 			introductionAwareMethodMatcher = (IntroductionAwareMethodMatcher) methodMatcher;
 		}
 
+		// 保存当前目标对象 clazz + 目标对象父类 的接口。
 		Set<Class<?>> classes = new LinkedHashSet<>();
+
+		// 确保当前目标对象 clazz + 包括  目标对象clazz 而不是代理类 clazz
 		if (!Proxy.isProxyClass(targetClass)) {
 			classes.add(ClassUtils.getUserClass(targetClass));
 		}
 		classes.addAll(ClassUtils.getAllInterfacesForClassAsSet(targetClass));
 
+		// 整个for循环 会检查当前目标clazz 上级接口的所有方法 看看是否会被方法匹配器匹配， 如果有一个匹配成功 就说明目标clazz 需要被 aop增强代理
 		for (Class<?> clazz : classes) {
+			// 获取当前clazz 内定义的method
 			Method[] methods = ReflectionUtils.getAllDeclaredMethods(clazz);
 			for (Method method : methods) {
 				if (introductionAwareMethodMatcher != null ?
@@ -302,11 +308,16 @@ public abstract class AopUtils {
 	 * (may be the incoming List as-is)
 	 */
 	public static List<Advisor> findAdvisorsThatCanApply(List<Advisor> candidateAdvisors, Class<?> clazz) {
+		// 说明当前 Spring没有定义 Advisor
 		if (candidateAdvisors.isEmpty()) {
 			return candidateAdvisors;
 		}
+		// 匹配当前clazz 的 advisors 信息
 		List<Advisor> eligibleAdvisors = new ArrayList<>();
+		// 不考虑引介增强
 		for (Advisor candidate : candidateAdvisors) {
+
+			// 判断当前advisor 是否匹配当前class
 			if (candidate instanceof IntroductionAdvisor && canApply(candidate, clazz)) {
 				eligibleAdvisors.add(candidate);
 			}

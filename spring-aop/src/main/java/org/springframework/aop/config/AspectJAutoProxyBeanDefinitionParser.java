@@ -36,10 +36,17 @@ import org.springframework.lang.Nullable;
  * @author Juergen Hoeller
  * @since 2.0
  */
+
+/**
+ * 对应 aspectj-autoproxy 开启aspectJ 注解的解析器。 与之对应
+ */
 class AspectJAutoProxyBeanDefinitionParser implements BeanDefinitionParser {
 
 	@Override
 	@Nullable
+	/**
+	 * parserContext : 它持有一个 readerContext ， readerContext 它又持有 registry 也就是咱们的 BeanFactory
+	 */
 	public BeanDefinition parse(Element element, ParserContext parserContext) {
 		AopNamespaceUtils.registerAspectJAnnotationAutoProxyCreatorIfNecessary(parserContext, element);
 		extendBeanDefinition(element, parserContext);

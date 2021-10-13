@@ -137,6 +137,10 @@ public abstract class AbstractAutoProxyCreator extends ProxyProcessorSupport
 
 	private final Map<Object, Class<?>> proxyTypes = new ConcurrentHashMap<>(16);
 
+	/**
+	 * key : beanName
+	 * value : boolean true:表示已经被增强   false:表示无法被增强
+	 */
 	private final Map<Object, Boolean> advisedBeans = new ConcurrentHashMap<>(256);
 
 
@@ -332,27 +336,41 @@ public abstract class AbstractAutoProxyCreator extends ProxyProcessorSupport
 	 * @return a proxy wrapping the bean, or the raw bean instance as-is
 	 */
 	protected Object wrapIfNecessary(Object bean, String beanName, Object cacheKey) {
+		// 一般不成立， 因为咱们一般很少使用 targetSourcedCreator 去创建对象， 在BeforeInstantiation 阶段
 		if (StringUtils.hasLength(beanName) && this.targetSourcedBeans.contains(beanName)) {
 			return bean;
 		}
+
+		// 条件成立，说明当前beanName 对应的对象不需要被做增强处理 ， 判断是在 BeforeInstantiation阶段做的。
 		if (Boolean.FALSE.equals(this.advisedBeans.get(cacheKey))) {
 			return bean;
 		}
+
+		// 条件一： isInfrastructureClass 判断当前bean类型是否是 基础框架的 类型， 这个类型的实例 不能被增强
+		// 条件二： 判断当前beanName 是否是 .ORIGINAL 结尾， 如果是这个结尾， 则跳过增强逻辑
 		if (isInfrastructureClass(bean.getClass()) || shouldSkip(bean.getClass(), beanName)) {
 			this.advisedBeans.put(cacheKey, Boolean.FALSE);
 			return bean;
 		}
 
 		// Create proxy if we have advice.
+		//查找适合当前 bean实例 class 的通知
 		Object[] specificInterceptors = getAdvicesAndAdvisorsForBean(bean.getClass(), beanName, null);
+
+		// 条件成立： 说明上面方法有查询到适合当前class 的通知。
 		if (specificInterceptors != DO_NOT_PROXY) {
 			this.advisedBeans.put(cacheKey, Boolean.TRUE);
+
+			// 创建代理对象 ， 根据查询到的通知
 			Object proxy = createProxy(
 					bean.getClass(), beanName, specificInterceptors, new SingletonTargetSource(bean));
+
+			// 保存代理对象类型
 			this.proxyTypes.put(cacheKey, proxy.getClass());
 			return proxy;
 		}
 
+		//执行到这里，不需要被增强
 		this.advisedBeans.put(cacheKey, Boolean.FALSE);
 		return bean;
 	}
@@ -446,25 +464,39 @@ public abstract class AbstractAutoProxyCreator extends ProxyProcessorSupport
 			AutoProxyUtils.exposeTargetClass((ConfigurableListableBeanFactory) this.beanFactory, beanName, beanClass);
 		}
 
+		// 创建代理对象的工厂， 它必须持有 创建 代理class 的生产资料
+		// 1, 目标对象
+		// 2. advisor 信息
 		ProxyFactory proxyFactory = new ProxyFactory();
 		proxyFactory.copyFrom(this);
 
+		// 条件成立， 说明咱们没有使用 xml 配置修改过 aop proxyTargetClass 为 true
 		if (!proxyFactory.isProxyTargetClass()) {
+
+			// 是否自动设置 proxyTargetClass = true ？
+			// 如果bd定义内 有 preserveTargetClass = true ， 那么这个bd 对应的clazz 创建代理时， 必须使用cglib
 			if (shouldProxyTargetClass(beanClass, beanName)) {
 				proxyFactory.setProxyTargetClass(true);
 			}
 			else {
+				// 根据目标类 判定是否可以使用 JDK动态代理
 				evaluateProxyInterfaces(beanClass, proxyFactory);
 			}
 		}
 
 		Advisor[] advisors = buildAdvisors(beanName, specificInterceptors);
+		// 提供给ProxyFactory advisors 信息
 		proxyFactory.addAdvisors(advisors);
+
+		// 提供给 ProxyFactory 目标对象
 		proxyFactory.setTargetSource(targetSource);
+
+		// 留给用户的扩展点
 		customizeProxyFactory(proxyFactory);
 
 		proxyFactory.setFrozen(this.freezeProxy);
 		if (advisorsPreFiltered()) {
+			// 设置成 true, 表示传递给 proxyFactory
 			proxyFactory.setPreFiltered(true);
 		}
 
@@ -509,8 +541,10 @@ public abstract class AbstractAutoProxyCreator extends ProxyProcessorSupport
 	 */
 	protected Advisor[] buildAdvisors(@Nullable String beanName, @Nullable Object[] specificInterceptors) {
 		// Handle prototypes correctly...
+		// 公共的方法拦截器， spring提供给用户的扩展点  默认是没有的
 		Advisor[] commonInterceptors = resolveInterceptorNames();
 
+		// 全部的方法拦截器
 		List<Object> allInterceptors = new ArrayList<>();
 		if (specificInterceptors != null) {
 			allInterceptors.addAll(Arrays.asList(specificInterceptors));
@@ -530,8 +564,10 @@ public abstract class AbstractAutoProxyCreator extends ProxyProcessorSupport
 					" common interceptors and " + nrOfSpecificInterceptors + " specific interceptors");
 		}
 
+		//
 		Advisor[] advisors = new Advisor[allInterceptors.size()];
 		for (int i = 0; i < allInterceptors.size(); i++) {
+			// 做一个类型提升
 			advisors[i] = this.advisorAdapterRegistry.wrap(allInterceptors.get(i));
 		}
 		return advisors;

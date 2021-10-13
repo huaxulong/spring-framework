@@ -71,11 +71,16 @@ public abstract class AopNamespaceUtils {
 		registerComponentIfNecessary(beanDefinition, parserContext);
 	}
 
+	/**
+	 * @param parserContext  parserContext : 它持有一个 readerContext ， readerContext 它又持有 registry 也就是咱们的 BeanFactory
+	 * @param sourceElement
+	 */
 	public static void registerAspectJAnnotationAutoProxyCreatorIfNecessary(
 			ParserContext parserContext, Element sourceElement) {
-
+		// 它会把 aspectj-autoproxy 解析成一个 beanDefinition 并且注册到 Spring 容器内
 		BeanDefinition beanDefinition = AopConfigUtils.registerAspectJAnnotationAutoProxyCreatorIfNecessary(
 				parserContext.getRegistry(), parserContext.extractSource(sourceElement));
+		// 执行到这里， Spring 容器内 已经有一个 AOP相关的 BeanDefinition 了
 		useClassProxyingIfNecessary(parserContext.getRegistry(), sourceElement);
 		registerComponentIfNecessary(beanDefinition, parserContext);
 	}
